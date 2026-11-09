@@ -50,7 +50,7 @@ HI_BUTTONS = {
     'filter_photo': '🖼️ फोटो', 'filter_video': '🎬 वीडियो', 'filter_document': '📄 दस्तावेज़',
     'filter_audio': '🎵 ऑडियो', 'filter_text': '📝 टेक्स्ट', 'owner_stats': '📊 आँकड़े',
     'owner_grant': '➕ प्रीमियम दें', 'owner_revoke': '🗑️ प्रीमियम हटाएँ', 'owner_grant_check': '🔎 Grant जाँचें',
-    'owner_broadcast': '📢 प्रसारण', 'owner_gifts': '🎁 लंबित अनुरोध', 'owner_payments': '🧾 भुगतान समीक्षा',
+    'owner_broadcast': '📢 प्रसारण', 'owner_gifts': '🎁 लंबित अनुरोध', 'owner_payments': '🧾 भुगतान समीक्षा', 'owner_ttl': '🛠️ TTL जाँच',
     'cancel': '❌ रद्द करें', 'home': '🏠 होम', 'retry_failed': '🔁 असफल फिर चलाएँ',
     'history_clear': '🗑️ इतिहास हटाएँ', 'logout': '✅ हाँ, लॉगआउट',
     'removebot': '✅ हाँ, बॉट हटाएँ', 'reset': '✅ हाँ, रीसेट', 'delete_data': '✅ हाँ, डेटा हटाएँ',
@@ -98,6 +98,8 @@ def button_label(action, original, language):
         return original
     if original.startswith('❌'):
         return '❌ रद्द करें'
+    if action.startswith('owner_ttl_drop:'):
+        return '✅ TTL index हटाएँ'
     if action.startswith('confirm_yes:'):
         kind = action.split(':', 2)[1]
         return {'logout': '✅ हाँ, लॉगआउट', 'removebot': '✅ हाँ, बॉट हटाएँ', 'reset': '✅ हाँ, रीसेट'}.get(kind, original)

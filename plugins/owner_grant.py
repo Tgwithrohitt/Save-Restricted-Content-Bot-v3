@@ -56,9 +56,11 @@ async def apply_owner_grant(client, message, owner_id, text, language='en'):
         # remove or bypass them automatically just to make a grant succeed.
         await check_premium_indexes_async(premium_users_collection)
     except UnsafePremiumIndexError:
+        from plugins.menu import markup
         await _reply_safely(message, _text(language,
-            '⚠️ Premium was not changed: an unsafe TTL index exists on premium_users. Stop old workers, back up and review the README payment-history migration before removing it.',
-            '⚠️ प्रीमियम नहीं बदला: premium_users पर असुरक्षित TTL index है। पुराने वर्कर रोकें, बैकअप लें और हटाने से पहले README का payment-history migration देखें।'))
+            '⚠️ Premium was not changed: an unsafe TTL index exists on premium_users. Stop old workers and payment processing, back up and review the README payment-history migration. Use TTL Review to inspect it; nothing is removed automatically.',
+            '⚠️ प्रीमियम नहीं बदला: premium_users पर असुरक्षित TTL index है। पुराने वर्कर और payment processing रोकें, बैकअप लें और README का payment-history migration देखें। TTL जाँच से index देखें; कुछ भी अपने आप नहीं हटेगा।'),
+            reply_markup=markup([[('🛠️ 𝗧𝗧𝗟 𝗜𝗡𝗗𝗘𝗫 𝗥𝗘𝗩𝗜𝗘𝗪', 'owner_ttl')]], language=language))
         return True
     except Exception:
         logger.warning('Could not inspect premium indexes before manual grant')
