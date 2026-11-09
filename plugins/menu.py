@@ -101,7 +101,7 @@ PAGES = {
         [('💳 𝗥𝗔𝗭𝗢𝗥𝗣𝗔𝗬', 'razorpay'), ('🎁 𝗚𝗜𝗙𝗧 𝗖𝗔𝗥𝗗', 'gift')],
         [('⏰ 𝗥𝗘𝗠𝗜𝗡𝗗𝗘𝗥𝗦', 'reminders')]], 'home'),
     'filters': ('🔽 𝗠𝗘𝗗𝗜𝗔 𝗙𝗜𝗟𝗧𝗘𝗥', 'Choose which message types to process.', [[('📑 𝗔𝗟𝗟', 'filter_all'), ('🖼️ 𝗣𝗛𝗢𝗧𝗢', 'filter_photo')], [('🎬 𝗩𝗜𝗗𝗘𝗢', 'filter_video'), ('📄 𝗗𝗢𝗖𝗨𝗠𝗘𝗡𝗧', 'filter_document')], [('🎵 𝗔𝗨𝗗𝗜𝗢', 'filter_audio'), ('📝 𝗧𝗘𝗫𝗧', 'filter_text')]], 'settings'),
-    'owner': ('👑 𝗢𝗪𝗡𝗘𝗥 𝗣𝗔𝗡𝗘𝗟', '🛡️ <b>Owner-only controls. Changes are logged.</b>', [[('📊 𝗦𝗧𝗔𝗧𝗦', 'owner_stats')], [('➕ 𝗚𝗥𝗔𝗡𝗧', 'owner_grant'), ('🗑️ 𝗥𝗘𝗩𝗢𝗞𝗘', 'owner_revoke')], [('🔎 𝗖𝗛𝗘𝗖𝗞 𝗚𝗥𝗔𝗡𝗧', 'owner_grant_check')], [('📢 𝗕𝗥𝗢𝗔𝗗𝗖𝗔𝗦𝗧', 'owner_broadcast'), ('🎁 𝗣𝗘𝗡𝗗𝗜𝗡𝗚', 'owner_gifts')], [('🧾 𝗣𝗔𝗬𝗠𝗘𝗡𝗧 𝗥𝗘𝗩𝗜𝗘𝗪', 'owner_payments')]], 'home'),
+    'owner': ('👑 𝗢𝗪𝗡𝗘𝗥 𝗣𝗔𝗡𝗘𝗟', '🛡️ <b>Owner-only controls. Changes are logged.</b>', [[('📊 𝗦𝗧𝗔𝗧𝗦', 'owner_stats')], [('➕ 𝗚𝗥𝗔𝗡𝗧', 'owner_grant'), ('🗑️ 𝗥𝗘𝗩𝗢𝗞𝗘', 'owner_revoke')], [('🔎 𝗖𝗛𝗘𝗖𝗞 𝗚𝗥𝗔𝗡𝗧', 'owner_grant_check')], [('📢 𝗕𝗥𝗢𝗔𝗗𝗖𝗔𝗦𝗧', 'owner_broadcast'), ('🎁 𝗣𝗘𝗡𝗗𝗜𝗡𝗚', 'owner_gifts')], [('🧾 𝗣𝗔𝗬𝗠𝗘𝗡𝗧 𝗥𝗘𝗩𝗜𝗘𝗪', 'owner_payments')], [('🛠️ 𝗧𝗧𝗟 𝗜𝗡𝗗𝗘𝗫 𝗥𝗘𝗩𝗜𝗘𝗪', 'owner_ttl')]], 'home'),
     'language': ('🌐 𝗟𝗔𝗡𝗚𝗨𝗔𝗚𝗘 / भाषा', 'Choose the main menu and input-prompt language. Other workflows may still appear in English.', [[('🇬🇧 English', 'language_en'), ('🇮🇳 हिन्दी', 'language_hi')]], 'settings'),
     'help': ('❓ 𝗛𝗘𝗟𝗣', '1️⃣ <b>Set up your account and custom bot.</b>\n2️⃣ <b>Choose Single or Batch under Save Posts.</b>\n3️⃣ <b>Send the requested link and count.</b>\n\n🔒 <b>Never share login codes, passwords, tokens or gift-card codes with an untrusted operator.</b>', [], 'home'),
 }
@@ -141,7 +141,9 @@ async def navigate(message, uid, name, edit):
     from plugins.batch_queue import lock_for
     from plugins.gift import pending as gift_pending
     from plugins.payment_review import confirmations as payment_confirmations
+    from plugins.premium_index_repair import clear as clear_ttl_review
     async with lock_for(uid):
+        clear_ttl_review(uid)
         delete_confirmations.pop(uid, None)
         simple_confirmations.pop(uid, None)
         if get_user_step(uid):
@@ -190,6 +192,12 @@ async def menu_callback(client, query):
         from plugins.batch_queue import lock_for
         async with lock_for(uid):
             simple_confirmations.pop(uid, None)
+    if not (action == 'owner_ttl' or action.startswith(('owner_ttl_select:', 'owner_ttl_drop:'))):
+        from plugins import premium_index_repair
+        if uid in premium_index_repair.states:
+            from plugins.batch_queue import lock_for
+            async with lock_for(uid):
+                premium_index_repair.clear(uid)
     if (action == 'owner' or action.startswith('owner_')) and uid not in OWNER_ID:
         await query.answer('Owner only.', show_alert=True)
         return
@@ -796,6 +804,21 @@ async def menu_callback(client, query):
         except Exception:
             logger.exception('Payment review failed')
             await query.message.edit_text(page('⚠️ 𝗥𝗘𝗩𝗜𝗘𝗪', 'Could not confirm this action. Check the record and audit log before retrying.'), reply_markup=markup([], 'owner_payments'), parse_mode=ParseMode.HTML)
+    elif action == 'owner_ttl' or action.startswith(('owner_ttl_select:', 'owner_ttl_drop:')):
+        from plugins import premium_index_repair as ttl_review
+        language = await localization.language_for(uid)
+        try:
+            if action == 'owner_ttl':
+                await ttl_review.show(query.message, uid, language)
+            elif action.startswith('owner_ttl_select:'):
+                await ttl_review.select(query.message, uid, action.partition(':')[2], language)
+            else:
+                await ttl_review.drop(query.message, uid, action.partition(':')[2], language)
+        except Exception:
+            logger.warning('TTL review could not be completed')
+            body = ('TTL कार्रवाई की पुष्टि नहीं हुई। दोबारा कोशिश से पहले index और audit जाँचें।' if language == 'hi' else
+                    'Could not confirm the TTL action. Inspect indexes and the audit before retrying.')
+            await query.message.edit_text(page('⚠️ TTL', body), reply_markup=markup([], 'owner', language), parse_mode=ParseMode.HTML)
     elif action == 'owner_stats':
         from utils.func import users_collection, premium_users_collection
         users = await users_collection.count_documents({})
