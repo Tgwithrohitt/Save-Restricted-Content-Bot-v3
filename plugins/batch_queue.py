@@ -16,8 +16,7 @@ from collections import defaultdict
 from pyrogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from pyrogram.enums import ChatType
 import re
-from config import FREEMIUM_LIMIT, PREMIUM_LIMIT
-from utils.func import db, get_user_data_key, is_premium_user
+from utils.func import db, get_user_data_key
 from shared_client import app
 from plugins import batch, localization
 from utils.custom_filters import get_user_step
@@ -132,7 +131,7 @@ async def start_new(uid, source, start, count, link_type, message, still_wanted=
             return False, 'Finish or cancel login first.'
         if batch.is_user_active(uid) or await has_unfinished(uid):
             return False, 'An unfinished batch exists. Open Task Status to resume or stop it.'
-        limit = PREMIUM_LIMIT if await is_premium_user(uid) else FREEMIUM_LIMIT
+        limit = 0  # Bulk saving is retired; this legacy path is not exposed.
         if count < 1 or count > min(MAX_BATCH_ITEMS, limit):
             return False, f'Your current plan allows at most {min(MAX_BATCH_ITEMS, limit)} items.'
         if not isinstance(start, int) or not 1 <= start <= MAX_MESSAGE_ID or start + count - 1 > MAX_MESSAGE_ID:
@@ -295,7 +294,7 @@ async def resume(uid, message, inflight_choice=None, expected_job_id=None, expec
         job = await get_job(uid)
         if not job or job.get('status') not in ('interrupted', 'paused', 'cancelled', 'running', 'cancelling') or not job.get('pending'):
             return False, 'No saved batch to resume.'
-        limit = PREMIUM_LIMIT if await is_premium_user(uid) else FREEMIUM_LIMIT
+        limit = 0  # Bulk saving is retired; this legacy path is not exposed.
         if job['total'] > min(limit, MAX_BATCH_ITEMS):
             return False, 'Your current plan does not allow this batch size.'
         if inflight_choice is not None and (inflight_choice not in ('skip', 'retry')
@@ -336,7 +335,7 @@ async def retry_failed(uid, message, expected_job_id=None, expected_fingerprint=
             return False, 'Resume the remaining items before retrying failures.'
         if expected_job_id != job.get('job_id') or expected_fingerprint != failed_fingerprint(failed):
             return False, 'This confirmation is outdated. Review the current failed items first.'
-        limit = PREMIUM_LIMIT if await is_premium_user(uid) else FREEMIUM_LIMIT
+        limit = 0  # Bulk saving is retired; this legacy path is not exposed.
         if len(failed) > min(limit, MAX_BATCH_ITEMS):
             return False, 'Your current plan does not allow this retry size.'
         bot = await batch.get_ubot(uid)
@@ -375,6 +374,8 @@ async def shutdown_workers():
 
 
 async def run_batch_queue_plugin():
-    # Single-instance recovery: do not automatically resend any in-flight item.
-    await jobs.update_many({'status': {'$in': ['running', 'paused', 'cancelling']}},
-                           {'$set': {'status': 'interrupted', 'updated_at': datetime.utcnow()}})
+    """Retire legacy bulk jobs without resuming or delivering any old item."""
+    await jobs.update_many(
+        {'status': {'$in': ['running', 'paused', 'cancelling', 'interrupted']}},
+        {'$set': {'status': 'retired', 'updated_at': datetime.utcnow()}},
+    )

@@ -6,9 +6,9 @@ import os, re, time, asyncio, json, asyncio
 from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 from pyrogram.errors import UserNotParticipant, FloodWait
-from config import API_ID, API_HASH, LOG_GROUP, STRING, FORCE_SUB, FREEMIUM_LIMIT, PREMIUM_LIMIT
+from config import API_ID, API_HASH, LOG_GROUP, STRING
 from utils.func import get_user_data, screenshot, thumbnail, get_video_metadata
-from utils.func import get_user_data_key, process_text_with_rules, is_premium_user, E, parse_message_link
+from utils.func import get_user_data_key, process_text_with_rules, E
 from shared_client import app as X
 from plugins.settings import rename_file
 from plugins import localization
@@ -379,46 +379,51 @@ async def process_msg(c, u, m, d, lt, uid, i, destination_override=None):
 
 @X.on_message(filters.private & filters.command(['batch', 'single']))
 async def process_cmd(c, m):
-    await begin_processing(c, m, m.from_user.id, m.command[0])
+    # Keep legacy commands from silently launching the retired bulk workflow.
+    if m.command[0] == 'batch':
+        await m.reply_text('Batch saving has been removed. Open /start and choose Save a Post.')
+        return
+    await begin_processing(c, m, m.from_user.id, 'single')
 
-async def begin_processing(c, m, uid, cmd):
+
+async def begin_processing(c, m, uid, cmd='single'):
+    """Start the only supported saver flow: one explicitly linked post."""
     language = await localization.language_for(uid)
     tr = lambda text: localization.translate(text, language)
-    if FREEMIUM_LIMIT == 0 and not await is_premium_user(uid):
-        await m.reply_text(tr("This bot does not provide free servies, get subscription from OWNER"))
+    if cmd != 'single':
+        await m.reply_text(tr('Batch saving has been removed. Open /start and choose Save a Post.'))
         return
-
-    if await sub(c, m, uid) == 1: return
+    if await sub(c, m, uid) == 1:
+        return
     pro = await m.reply_text(tr('Doing some checks hold on...'))
 
-    from plugins.batch_queue import has_unfinished, lock_for
+    from plugins.batch_queue import lock_for
     from utils.custom_filters import get_user_step
     async with lock_for(uid):
         if uid in Z or get_user_step(uid):
             await pro.edit(tr('An input is already in progress. Cancel it before starting another.'))
             return
-        if is_user_active(uid) or await has_unfinished(uid):
-            await pro.edit(tr('An unfinished task exists. Open Task Status to resume or stop it.'))
+        if is_user_active(uid):
+            await pro.edit(tr('A post is already being saved. Please wait for it to finish.'))
             return
         ubot = await get_ubot(uid)
         if not ubot:
             await pro.edit(tr('⚠️ Add your custom bot from the Account menu first.'))
             return
-        Z[uid] = {'step': 'start' if cmd in ('batch', 'topic_batch') else 'start_single', 'topic_mode': cmd == 'topic_batch', 'language': language}
+        Z[uid] = {'step': 'start_single', 'language': language}
     cancel_buttons = InlineKeyboardMarkup([[InlineKeyboardButton(localization.button_label('cancel', '❌ 𝗖𝗔𝗡𝗖𝗘𝗟', language), callback_data='ui:cancel')]])
-    prompt = ('Send a link containing BOTH topic and post IDs, such as https://t.me/c/123456/12/99. Set a destination forum topic first. You will choose how many consecutive message IDs to scan.' if cmd == 'topic_batch' else 'Send the first message link. Normal batch scans consecutive message IDs across the whole chat, including other topics. Use Topic Batch to restrict a forum topic.' if cmd == 'batch' else 'Send the message link.')
-    await pro.edit(tr(prompt), reply_markup=cancel_buttons)
+    await pro.edit(tr('Send the Telegram message link you want to save.'), reply_markup=cancel_buttons)
 
 @X.on_message(filters.private & filters.command(['cancel', 'stop']))
 async def cancel_cmd(c, m):
     uid = m.from_user.id
     if is_user_active(uid):
         if await request_batch_cancel(uid):
-            await m.reply_text('Cancellation requested. The current batch will stop after the current download completes.')
+            await m.reply_text('Cancellation requested. The current post will stop at the next safe point.')
         else:
             await m.reply_text('Failed to request cancellation. Please try again.')
     else:
-        await m.reply_text('No active batch process found.')
+        await m.reply_text('No active post-saving task found.')
 
 @X.on_message(filters.text & filters.private & ~login_in_progress & ~filters.command([
     'start', 'batch', 'cancel', 'login', 'logout', 'stop', 'set',
@@ -438,24 +443,7 @@ async def text_handler(c, m):
     if uid not in Z or Z[uid].get('step') != s:
         return
 
-    if s == 'start':
-        L = m.text
-        i, d, lt, topic = parse_message_link(L)
-        if not i or not d:
-            await m.reply_text(tr('⚠️ Invalid link. Send a Telegram message link or cancel.'))
-            return
-        topic_mode = Z[uid].get('topic_mode', False)
-        if topic_mode and topic is None:
-            await m.reply_text(tr('⚠️ Send a link containing both topic and post IDs, for example https://t.me/c/123456/12/99.'))
-            return
-        if not topic_mode and topic is not None:
-            await m.reply_text(tr('⚠️ This link includes a topic. Cancel and choose Topic Batch to avoid scanning other topics.'))
-            return
-        Z[uid].update({'step': 'count', 'cid': i, 'sid': d, 'lt': lt, 'source_topic': topic})
-        prompt = ('How many consecutive message IDs should be scanned? Other topics are skipped; this is not the number of posts copied.' if topic_mode else 'How many messages?')
-        await m.reply_text(tr(prompt), reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton(localization.button_label('cancel', '❌ 𝗖𝗔𝗡𝗖𝗘𝗟', language), callback_data='ui:cancel')]]))
-
-    elif s == 'start_single':
+    if s == 'start_single':
         L = m.text
         i, d, lt = E(L)
         if not i or not d:
@@ -466,14 +454,14 @@ async def text_handler(c, m):
         flow = Z[uid]
         flow.update({'step': 'process_single', 'cid': i, 'sid': d, 'lt': lt})
         pt = await m.reply_text(tr('📥 Preparing the post...'))
-        from plugins.batch_queue import lock_for, has_unfinished
+        from plugins.batch_queue import lock_for
         from utils.custom_filters import get_user_step
         registered = False
         try:
             async with lock_for(uid):
                 if Z.get(uid) is not flow:
                     return
-                if get_user_step(uid) or is_user_active(uid) or await has_unfinished(uid):
+                if get_user_step(uid) or is_user_active(uid):
                     await pt.edit(tr('⚠️ Finish your existing login or task first.'))
                     return
                 ubot = await get_ubot(uid)
@@ -505,41 +493,4 @@ async def text_handler(c, m):
                     await remove_active_batch(uid)
                 if Z.get(uid) is flow:
                     Z.pop(uid, None)
-
-    elif s == 'count':
-        if not m.text.isascii() or not m.text.isdigit() or len(m.text) > 6:
-            await m.reply_text(tr('Enter a valid batch size.'))
-            return
-
-        count = int(m.text)
-        Z[uid]['step'] = 'validating'
-        maxlimit = PREMIUM_LIMIT if await is_premium_user(uid) else FREEMIUM_LIMIT
-
-        if count < 1 or count > maxlimit:
-            if uid in Z and Z[uid].get('step') == 'validating':
-                Z[uid]['step'] = 'count'
-            await m.reply_text(tr(f'Maximum limit is {maxlimit}.'))
-            return
-
-        from plugins.batch_queue import start_new, MAX_BATCH_ITEMS
-        if count > MAX_BATCH_ITEMS:
-            if uid in Z and Z[uid].get('step') == 'validating':
-                Z[uid]['step'] = 'count'
-            await m.reply_text(tr(f'Maximum batch size is {MAX_BATCH_ITEMS}.'))
-            return
-        if uid not in Z or Z[uid].get('step') != 'validating':
-            return
-        source, first_id, link_type = Z[uid]['cid'], Z[uid]['sid'], Z[uid]['lt']
-        flow = Z[uid]
-        flow['step'] = 'process'
-        pt = await m.reply_text(tr('📚 Preparing batch...'))
-        try:
-            ok, reason = await start_new(uid, source, first_id, count, link_type, pt,
-                                         still_wanted=lambda: Z.get(uid) is flow, source_topic=flow.get('source_topic'), language=language)
-            await pt.edit(('📚 ' if ok else '⚠️ ') + tr(reason))
-        except Exception:
-            await pt.edit(tr('⚠️ Could not start or update the batch. Check Task Status before trying again.'))
-        finally:
-            if Z.get(uid) is flow:
-                Z.pop(uid, None)
 

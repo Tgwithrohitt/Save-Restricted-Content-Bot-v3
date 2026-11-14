@@ -13,9 +13,9 @@ logger = logging.getLogger(__name__)
 
 
 def validate_configuration():
-    from config import API_ID, API_HASH, BOT_TOKEN, MONGO_DB, OWNER_ID, MASTER_KEY, IV_KEY
-    if not str(API_ID).isdigit() or not all((API_HASH, BOT_TOKEN, MONGO_DB, OWNER_ID)):
-        raise RuntimeError('Set API_ID, API_HASH, BOT_TOKEN, MONGO_DB and OWNER_ID before starting.')
+    from config import API_ID, API_HASH, BOT_TOKEN, MONGO_DB, MASTER_KEY, IV_KEY
+    if not str(API_ID).isdigit() or not all((API_HASH, BOT_TOKEN, MONGO_DB)):
+        raise RuntimeError('Set API_ID, API_HASH, BOT_TOKEN and MONGO_DB before starting.')
     legacy = MASTER_KEY == 'gK8HzLfT9QpViJcYeB5wRa3DmN7P2xUq' or IV_KEY == 's7Yx5CpVmE3F'
     if legacy and os.getenv('ALLOW_INSECURE_LEGACY_KEYS', 'false').lower() != 'true':
         raise RuntimeError('Set unique MASTER_KEY and IV_KEY; see README for existing-session migration.')
@@ -29,7 +29,11 @@ async def load_and_run_plugins():
     validate_configuration()
     from shared_client import start_client
     await start_client()
-    plugins = sorted(f[:-3] for f in os.listdir('plugins') if f.endswith('.py') and f != '__init__.py')
+    # The product intentionally ships a small surface: save one post, live
+    # channel clone, settings, and account connection. Retired downloader,
+    # premium, payment, gift, reminder, owner and batch-history modules are
+    # kept out of the runtime so they cannot register commands or callbacks.
+    plugins = ('start', 'localization', 'settings', 'batch', 'batch_queue', 'login', 'mirror', 'menu')
     for plugin in plugins:
         module = importlib.import_module(f'plugins.{plugin}')
         if hasattr(module, f'run_{plugin}_plugin'):
@@ -38,9 +42,6 @@ async def load_and_run_plugins():
 
 async def shutdown():
     """Close connected clients; live mirror subscriptions remain saved for restart."""
-    reminders = sys.modules.get('plugins.reminders')
-    if reminders:
-        await reminders.shutdown_reminders()
     queue = sys.modules.get('plugins.batch_queue')
     if queue:
         await queue.shutdown_workers()
