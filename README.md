@@ -1,119 +1,102 @@
-# 🔒 Tgwithrohit Content Saver
+# 🪞 Post Vault — Save Post & Clone Channel
 
-Telegram content saver based on the v3 Pyrogram + Telethon codebase. Use only for content you have permission to access and save. The new interface uses nested buttons, emojis, bold Unicode and blockquotes.
+A deliberately focused Telegram bot for two jobs only:
 
-## ✨ What is available
+1. **Save Post** — copy one Telegram post you are allowed to access.
+2. **Clone Channel** — mirror new posts from one accessible source channel to your chosen destination while the bot is online.
 
-- **Save:** single post, MongoDB-backed batch, and bounded topic-scoped batch; task status and stop (pause/resume for batches); batch summary and private archive history, with confirmation before retrying failed items or clearing history.
-- **Live mirror:** one source per user, saved subscription restored after restart. Requires the user's own session, custom bot, destination and active premium (owners are exempt). It processes new updates only while online; it does not catch up missed messages. One bot instance only: multiple instances can duplicate delivery. Use Save Posts → Mirror Status to compare the local worker state with the saved state; neither proves delivery. Stop waits for in-flight work to drain, which may have finished before stop completed. If a stop cannot be confirmed, retry Stop Mirror: saved running state can otherwise be restored on restart. A prior self-stop or failed handler registration may also require an explicit Stop before starting again. Avoid using a source as the destination. Mirror tests are offline only.
-- **Content settings:** destination/topic, filename tag, caption, original-caption toggle, prefix/suffix, thumbnail, word deletion/replacement and media filter; a private preview displays current values without exposing credentials. Clear one setting with confirmation or reset all content settings. Reset applies to current content settings and the thumbnail and can affect active tasks and mirrors. Reset confirmation is one-use and expires after 10 minutes; it is not a value-bound snapshot. Some legacy processing messages still use the older theme.
-- **Account:** login/logout, custom bot setup, status and account-data deletion. Deletion attempts to remove account settings, saved credentials, mirror data, saved jobs and history and local thumbnail/session files; payment and premium records and backups may be retained. A private, one-use confirmation expires after 10 minutes or when navigating away; old delete buttons no longer work. Deletion spans multiple operations and is not transactional: if it fails, some data may already be removed. Check Telegram Settings → Devices and retry when instructed. If Telegram revocation fails, revoke the session in Telegram Settings → Devices. Logout and Remove Bot have separate one-use 10-minute confirmations bound to the saved credential; changed credentials require a fresh confirmation. Removing a bot locally does not revoke its token at BotFather.
-- **Owner panel:** basic statistics, grant/revoke premium, broadcast to active premium accounts, manual gift request review, and limited payment-review queues. Owner checks apply to callbacks and input.
-- **Premium:** Telegram Stars, optional Razorpay payment links, optional manual gift-card reference review, and optional user-opt-in expiry reminders. See payment instructions below.
-- **External video/audio:** disabled by default until the operator explicitly enables it and isolates outbound network access.
+The `/start` dashboard has exactly three primary destinations:
 
-Send `/start` once to open the interface. Some legacy command handlers remain for compatibility; credential-management commands now direct users to the account menu. The Telegram command picker is set to just Start. This is not a complete command-free rewrite.
+- **📥 Save Post**
+- **⚙️ Settings**
+- **👤 Account**
 
-## 🚀 Setup
+Downloader, premium, payments, gift cards, batch saving, topic batch, task history, reminders, help and owner panels are not loaded by the runtime.
 
-1. Install Python 3.10+ and FFmpeg, then `pip install -r requirements.txt`.
-2. Copy `.env.example` to `.env` and fill in `API_ID`, `API_HASH`, `BOT_TOKEN`, `MONGO_DB` and space-separated numeric `OWNER_ID`s. Never commit or share these values.
-3. Set random, unique `MASTER_KEY` (at least 16 characters) and `IV_KEY` (at least 12 characters). Generate locally, for example with `python -c "import secrets; print(secrets.token_urlsafe(32))"` for each. Keys must remain stable across restarts.
-4. Set `FREEMIUM_LIMIT` to a positive batch count to allow free use. `FORCE_SUB=0` disables forced subscription. Configure `LOG_GROUP` and optional `STRING` for the existing large-file path. Large files may be uploaded through that log group, so its members may be able to see them.
-5. Run `python main.py`; open the bot with `/start`.
+> Use this project only with content and channels you own or are permitted to copy. Telegram permissions, source availability and platform limits still apply.
 
-**Existing installations:** encrypted sessions and tokens require the old keys. Do not rotate keys without decrypting and re-encrypting data or having users reconnect. To temporarily run with the old public defaults, set `ALLOW_INSECURE_LEGACY_KEYS=true` while planning migration; this is insecure. Previously saved plaintext custom bot tokens remain readable and are encrypted when next saved. The bot refuses default keys by default.
+## Dashboard flow
 
-**Account security:** the login flow receives phone numbers, login codes and 2FA passwords in bot chat. Old Telethon settings and session-string buttons are disabled; `/settings` only directs users to the private menu. Never send session strings to the bot. Reconnecting stops an active mirror first. Login input and credential removal are serialized, but a request already in progress can finish before cancellation; check account status and Telegram Devices. Message deletion is best effort, and the operator can access credentials and the resulting session. Only use a trusted, private deployment. Protect MongoDB and server storage. Never submit redemption codes or session strings to an untrusted bot.
+### 1. Account
 
-**Custom bot token setup:** Account → Custom Bot accepts a token only in private chat. The operator can access the token despite encrypted storage; trust the operator. Message deletion is best effort and a failure is reported when possible. Replacement stops and drains the live mirror. Token format is checked locally, but Telegram validity is not checked at save time; a saved token can still fail when used. An uncertain database result may mean the token was saved even if an error appears. Account Status only shows whether a token is stored, not which one. Revoke an exposed token with BotFather; deleting it here does not revoke it there. Tests are offline only.
+Open **Account** and:
 
-**External downloads:** set `ENABLE_EXTERNAL_DOWNLOADS=true` only after enforcing outbound network isolation and blocking private/internal addresses and redirects at the infrastructure level. yt-dlp can make further network requests; URL syntax checks alone do not prevent SSRF. Video quality can be selected as Auto or up to 360p, 480p, 720p, or 1080p; unavailable MP4 formats fail rather than exceeding the selected resolution. These are maximums, not guarantees of exact resolution. Source availability, file size limits and Telegram rate limits still apply. Temporary download files and configured cookies are stored in per-request temporary directories and removed afterwards, except on abrupt process termination. Cookie files must contain only the intended provider’s scoped cookies; provider URLs and redirects still require infrastructure isolation.
+- connect the Telegram account that can read the source when required;
+- add a custom bot token for sending saved posts; and
+- use Account Status to confirm that credentials are stored.
 
-## 💎 Payments
+Phone numbers, login codes, passwords and bot tokens are sensitive. The bot tries to delete custom-bot token messages after reading them, but deletion is best effort. Use a deployment you trust and revoke exposed credentials in Telegram Devices or BotFather.
 
-### Payment-history safety for existing databases
+### 2. Settings
 
-Some older versions created a MongoDB TTL index (typically `expireAt_1`) on `premium_users`. Such an index deletes the **entire premium document** at expiry, including payment IDs used for duplicate-grant protection. It can also erase records before a reminder or recovery is processed. This version no longer creates that index; legacy `/add` and `/rem` direct users to the owner panel, and the unsafe legacy `/transfer` is disabled.
+Configure the destination before starting a clone:
 
-**Before taking payments:** stop all old workers, back up the database, inspect `db.premium_users.getIndexes()` in MongoDB and remove any TTL index from `premium_users` after reviewing it. Do not remove the required unique `user_id` index. Reconcile any records already deleted by TTL or legacy transfer/revoke against provider and invoice history; removing an index cannot restore lost payment IDs. New Stars invoices, Stars pre-checkout, premium grants and Razorpay link creation/webhook processing fail closed if a TTL index remains or index inspection fails. Already-created payment links and payments can need manual review; do not assume this change repairs old history. Indexes are never automatically dropped. Legacy versions used server-local time for some premium timestamps; if the old host was not on UTC, review and migrate those dates deliberately before enabling billing or reminders. Do not enable billing until the database and recovery path have been reviewed and tested with the real providers.
+- **Destination:** a numeric chat ID such as `-1001234567890`; optionally append `/topic-id` for a forum topic.
+- **Caption:** text appended to saved media.
+- **Media filter:** choose all, photo, video, document, audio or text.
+- **Original caption:** keep or remove the source media caption.
+- **Language:** English or Hindi dashboard labels.
 
-### Owner manual premium grants
+When no destination is set, an individual saved post goes to the user's private chat. A live channel clone requires an explicit destination. The source and destination cannot be the same chat.
 
-Open Owner Panel → Grant and send a positive numeric user ID followed by 1–3650 days (for example `123456789 30`). Existing active time is extended; expired plans start from the current UTC time. The owner receives the recorded expiry and a grant reference; recipient notification is best effort and may fail if the user has not started or has blocked the bot. The user can check Account → Status.
+### 3. Save Post
 
-An old TTL index, duplicate user IDs, unavailable MongoDB or incompatible MongoDB version can prevent grants. The bot reports the index/connection problem when known and does **not** automatically drop indexes or reconcile duplicates. Stop old workers, back up and follow the payment-history migration above. Aggregation-update pipelines require MongoDB 4.2+ and the database user needs permission to inspect and create indexes.
+Tap **Save a Post**, then send one Telegram message link. The custom bot delivers the result directly when possible. Private sources require a connected Telegram account with access to that source.
 
-If a write or confirmation is uncertain, the owner receives a grant reference. **Do not submit another grant until it is reviewed**: a timeout may occur after the extension. Owner Panel → Check Grant checks that owner's audit record and exact `manual:<reference>` in the user's premium payment history without changing premium. A recorded ID proves the grant was recorded, not that the plan remains active; the screen separately shows the current expiry. Missing history is inconclusive, especially if historical TTL deletion removed it or the original write is still running. The audit, premium update, notification and response are separate operations; do not run concurrent workers or manual database migrations. If the result message itself could not be delivered, inspect the audit before submitting again. This workflow has offline mock tests only; validate with live MongoDB and Telegram before relying on it.
+Only single-post saving is supported. Legacy `/batch` does not start a job and directs users back to the dashboard.
 
-### Telegram Stars
+### 4. Clone Channel
 
-Configure `PLAN_*` prices/durations. The bot stores invoice snapshots and validates pre-checkout details. It records the charge ID in the premium document to avoid extending twice on a repeated event. `premium_users.user_id` must be unique and MongoDB must support aggregation update pipelines; resolve existing duplicate users before enabling payments. If activation fails, the user and owner are notified for manual review. Test with Telegram and MongoDB before charging users; offline tests do not prove a live payment flow.
+Tap **Clone Channel** and send the source `@username` or numeric chat ID. The clone is opt-in, one source per user, and starts after the bot validates the source, connected account, custom bot and destination.
 
-### Owner payment review (limited recovery)
+Important clone behavior:
 
-The owner panel → Payment Review lists the latest 505 Stars and Razorpay `processing` records and Razorpay link records stuck in `creating`. Processing may still be running; creating links and unbound Stars invoices are **not** proof that a payment succeeded. The queues are not a complete provider transaction history and do not include paid events lost before a verified charge was stored. Consult the buyer receipt and provider dashboard, including refund/dispute status, independently.
+- It handles **new posts only** while this worker is online.
+- It does **not** backfill historical or missed posts.
+- It has one active clone per user.
+- Use **Clone Status** and **Stop Clone** from Save Post to manage it.
+- A delivery already in progress may finish before a stop takes effect.
 
-For a processing record whose exact payment ID is **already present** on that user's premium document, the owner can confirm marking the invoice `completed`. The bot rechecks the invoice snapshot, duplicate payment IDs, TTL-index guard and stored grant, and creates an `admin_audit` record before changing invoice status. This action **never grants or extends premium**, does not notify the buyer, and does not prove that the current subscription is active. Unapplied or missing payments require manual provider/database reconciliation; do not fabricate processing records or grant a second time without checking payment history. Confirmations are one-shot, expire after 10 minutes and disappear on restart or navigation away.
+## Setup
 
-The proof and invoice update are separate MongoDB operations, not a transaction: stop old workers and avoid concurrent migrations/deletions of payment or premium history during review. Inspect the audit log and invoice after an error or ambiguous response. The workflow does not reconcile refunds, chargebacks, provider-side mismatches, a failed invoice creation or a payment received before processing was stored. It has offline tests only; test against a real replica/database and providers before taking payments. For large queues, consider indexes `(status, created_at, _id)` on `stars_invoices` and `razorpay_payments`; use a database backup and review existing indexes first. Payment history must not be deleted or TTL-expired.
+1. Copy `.env.example` to `.env`.
+2. Set `API_ID`, `API_HASH`, `BOT_TOKEN`, `MONGO_DB`, `MASTER_KEY` and `IV_KEY`.
+3. Generate unique encryption keys before production. Keep prior values while migrating existing encrypted account records.
+4. Install requirements:
 
-### Optional Razorpay
+   ```bash
+   pip install -r requirements.txt
+   ```
 
-**Disabled by default.** Check current Telegram, Razorpay and local rules before enabling; Telegram digital goods/services sold inside bots may require Stars. Do not enable alternative payment flows unless your use is compliant.
+5. Start the bot worker:
 
-- Set `RAZORPAY_ENABLED=true`, provider key ID, key secret, webhook secret and `RAZORPAY_PLAN_*_PAISE` prices. A zero price disables that plan.
-- Expose the web app over HTTPS and configure Razorpay's `payment_link.paid` webhook at `https://YOUR_DOMAIN/webhooks/razorpay`. Keep the webhook secret private. Run the bot worker and the web app; `python main.py` alone does **not** serve webhooks. The included Flask development server can be run with `python app.py` for local testing; use a production WSGI server and reverse proxy for deployment. The Procfile defines separate worker and web processes; the Docker default starts both in one container.
-- The webhook verifies the raw-body HMAC, captured status, full INR amount, stored link ID and payment ID before granting premium. Webhook failures return retryable errors when appropriate. Check provider dashboards for creation failures, refunds and disputes; automatic refund/dispute reconciliation and buyer notification from the webhook are not implemented. Users can check plan status in the bot.
+   ```bash
+   python main.py
+   ```
 
-### Optional manual gift-card review
+`/start` opens the dashboard. The command picker is intentionally limited to `/start`; an optional owner can run `/set` to refresh that list.
 
-Set `GIFT_ENABLED=true` and optional `GIFT_PLAN_*_VALUE` display text. Users choose a plan and card type, then submit a **non-secret reference** like `REF-ABC12345`; never send a gift-card redemption code. Owners must independently verify payment before using Approve or Reject. This is a manual workflow, not automatic gift-card validation. Owner panel shows pending requests, including requests whose notification failed. Duplicate references are rejected.
+## Deployment notes
 
-All payment systems need real provider, database and recovery testing before production use. Record keeping, refunds, customer support and compliance are the operator's responsibility.
+- Run **one bot worker** against a MongoDB database. Multiple workers can duplicate live-clone deliveries.
+- `FORCE_SUB=0` disables the optional required-channel check.
+- The optional `STRING` and `LOG_GROUP` settings are only for the existing large-file upload path; normal single-post delivery does not require them.
+- The bundled web app exposes `/health` for web-process liveness only. It does not prove Telegram or MongoDB readiness.
 
-## ⏰ Optional expiry reminders
+## Migrating from the previous feature set
 
-Set `EXPIRY_REMINDERS_ENABLED=true` and restart the bot worker; each user must additionally turn reminders on under Premium → Reminders. Defaults: a 24-hour window and a scan every 900 seconds. Configure `EXPIRY_REMINDER_HOURS` (1–720) and `EXPIRY_REMINDER_INTERVAL_SECONDS` (60–86400). The worker creates a unique `premium_users.user_id` index, so resolve duplicates before enabling it. Owners are excluded; users can opt out at any time, and account deletion removes their preference.
+Legacy premium/payment/downloader modules remain in the repository history for compatibility and auditability, but `main.py` no longer loads them. Their inline buttons are rejected and returned to the updated dashboard. Legacy running bulk jobs are marked `retired` at startup and are never resumed or delivered.
 
-Reminders are **best effort**, not guaranteed: the bot must be online, Telegram must accept the message, and the subscription must enter the window while it is being scanned. The system claims each expiry before sending and does not retry ambiguous or failed sends, to reduce duplicates. A crash or send failure can therefore lose the reminder. Renewal/revocation is checked at claim time, but may race with delivery; the message reports expiry *when checked*. One bot worker is required as for batch/mirror. This feature has offline tests only.
+## Testing
 
-## 📚 Batch recovery
+Run the offline test suite with:
 
-Batch jobs are stored in MongoDB (maximum 5,000 items, additionally limited by the user's current plan). Run **one bot worker instance only**: the queue does not provide distributed worker locking. After a restart, open Save Posts → Task Status and resume manually; batches never automatically restart. The destination is captured at batch creation; other content settings can change during processing.
+```bash
+python -m unittest discover -s tests -v
+```
 
-A Telegram delivery and its database checkpoint cannot be atomic. If a worker stops with an item in flight, Task Status asks whether to **skip** it or **retry** it; retrying may duplicate an already delivered item, while skipping may omit it. Failed-item retry is also manual and warns of possible duplicates; cancelled batches with remaining items must be resumed before retrying failures. Confirmation buttons are bound to the relevant job and item attempt, so old buttons do not silently retry a different checkpoint. An error during a direct media send is not automatically retried through another upload path. Stop/pause takes effect between items; an upload already in progress may complete. Stop marks a saved job cancelled and it can still be resumed manually, or replaced by a new batch; account-data deletion removes saved jobs and history. A failed database update may prevent even the interruption status from being saved; restore database access and review Task Status. This recovery flow has only offline mock tests, not live Telegram/MongoDB integration tests.
+The suite uses mocks; it does not replace live Telegram, MongoDB or permission testing.
 
-## 🌐 Language / भाषा
+## License
 
-Use Settings → Language / भाषा to choose English or Hindi for the main menus, navigation buttons, standard input prompts, batch setup, task/retry controls, batch history, the content-settings preview and clear-one flow, core login/logout prompts and privacy warnings, custom-bot token setup, account status, account-data deletion, content-reset prompts and results, and live-mirror setup/status/stop screens. English is the default; the choice is saved per user in MongoDB and retained across restarts. Content reset does not change the language; account-data deletion removes it. If the preference cannot be read, menus temporarily fall back to English. If saving fails, the bot reports the failure instead of claiming a change.
-
-Account status only reports whether credentials are stored, not whether they are valid; a failed database read is shown as unknown. This is **partial localization**: other account screens, individual media-processing steps, payment, owner workflows, some notifications, validation errors and downloader screens may still appear in English. Login uses the language selected when the flow starts; unsuccessful input-message deletion is reported when possible. Batch progress and completion notifications use the language selected at batch creation; changing language later affects Task Status but not an existing batch or its failed-item retry. Older jobs without a language snapshot use English. Technical terms and some button labels remain English to avoid changing payment or security instructions inaccurately. `/start` is still required as the Telegram bootstrap. Locale selection and menu rendering have offline mock tests only; live Telegram and MongoDB testing is pending.
-
-## 🧵 Topic-scoped batch (limited)
-
-Set Settings → Destination to an existing destination forum group and topic, formatted `-100<group-id>/<topic-id>`. Under Save Posts → Topic Batch, send an explicit source forum post link containing both topic and message IDs, for example `https://t.me/c/123456/12/99` or `https://t.me/publicgroup/12/99`. A plain message link or topic-root-only link is not enough. The connected user account needs access to both forums and their topics; the custom bot must be able to access and post in the destination. The source and destination must be **different forum groups**. The initial post must be verifiably in the selected topic. A closed, missing or inaccessible destination topic is rejected; permissions may change after checks.
-
-Enter the number of **consecutive message IDs to scan**, starting at the linked post, not the number of topic posts to copy. Interleaved messages in other topics and service messages are skipped; missing messages and messages whose forum/topic metadata cannot be verified are recorded as failures. The scan is bounded by the plan limit and the 5,000-ID cap. It does not enumerate all messages in the topic and can miss messages outside the selected range; inspect the summary and retry failures cautiously. Existing batch checkpoint, pause/stop and duplicate-warning rules apply, and the source topic/destination are preserved for resume and retry. Telegram sends to the configured `message_thread_id`; actual permissions, thread routing, message metadata and media support require live testing.
-
-This is **not full topic cloning**: it does not create destination topics, copy topic names/icons, preserve message reply trees or automatically map every topic. Ordinary Batch scans consecutive IDs across the whole chat, including all topics. For safety, it now rejects a link with an explicit topic component and directs the user to Topic Batch; Single still handles one linked post. Old saved jobs created before this change may have discarded the topic component and cannot be made topic-scoped automatically. Stop and review or replace such jobs instead of resuming them blindly. Topic Batch has offline mock tests only and has not been tested with live forum groups or MongoDB.
-
-## 🗂️ Batch history and settings preview
-
-Save Posts → History lists up to the latest 1,005 archived batches, five per page, scoped to the user's private chat. A batch is archived when it is replaced by a new batch or failed-item retry; the current batch remains under Task Status. Archived entries are view-only and cannot be resumed or retried. Clearing history requires a short-lived confirmation and deletes archived records only; the current task and any protected copy remain. A current task may later appear in history when replaced. Account-data deletion also removes batch jobs and history. The database retains source/destination and message IDs in archived records until deletion; protect backups and MongoDB access. There is no automatic history retention limit. For large installations, consider a compound index on `batch_history` (`user_id`, `archived_at`, `_id`) after reviewing the deployment.
-
-Settings → View Settings displays the user's content settings without showing bot tokens or session strings. Long text is shortened in the preview. Settings → Clear One removes one selected content value after a short-lived confirmation; a changed value will not be cleared by an old confirmation. Thumbnail removal still requires the content reset. Destination changes apply to future batches, while some other content settings can affect an already running batch. History and preview have offline tests only.
-
-## ⚠️ Remaining limitations
-
-This is not yet all 40 proposed improvements or a complete v4 rewrite. Full topic cloning, complete Hindi localization, guaranteed anti-ban protection and full admin/payment recovery are not implemented. Live mirror does not restore missed messages. No claim is made that all protected media can be saved. Telegram permissions, APIs and limits apply.
-
-Single-post work is tracked while running but is not restart-resumable; cancellation cannot reliably undo an in-flight Telegram send. Leaving a normal input prompt via Home or Back discards it; login must be completed or explicitly cancelled. The legacy forwarding engine and external downloader still require real-world integration and security testing. No source access restrictions, content rights or Telegram limits should be assumed to be bypassable.
-
-## 🧪 Tests and health
-
-`python -m unittest discover -s tests -v` runs offline tests with mocked Telegram/MongoDB/payment calls. `/health` on the web service checks web-process liveness only, not bot or database readiness. Live Telegram, MongoDB, provider and multi-process tests require a separately configured environment.
-
-## 📜 License and attribution
-
-GPL-3.0: see [LICENSE](LICENSE). Original copyright notices and third-party dependency attribution remain intact; branding does not change authorship or licenses.
+GPL-3.0 — see [LICENSE](LICENSE). Original copyright notices and third-party attribution remain in place.

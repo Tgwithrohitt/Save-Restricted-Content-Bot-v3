@@ -1,13 +1,7 @@
 {
-  "name": "Tgwithrohit Content Saver",
-  "description": "Telegram content saver by Tgwithrohit",
-  "keywords": [
-    "python3",
-    "telegram",
-    "MusicBot",
-    "telegram-bot",
-    "pyrogram"
-  ],
+  "name": "Post Vault",
+  "description": "Focused Telegram post saver and live channel clone",
+  "keywords": ["python", "telegram", "pyrogram", "post-saver", "channel-clone"],
   "repository": "https://github.com/Tgwithrohitt/Save-Restricted-Content-Bot-v3",
   "env": {
     "API_ID": {
@@ -26,83 +20,46 @@
       "required": true
     },
     "MONGO_DB": {
-      "description": "MongoDB connection URL (https://cloud.mongodb.com)",
-      "value": "",
-      "required": true
-    },
-    "OWNER_ID": {
-      "description": "User ID(s) to be set as bot owner(s), separated by space (e.g., 1234 5678)",
+      "description": "MongoDB connection URL",
       "value": "",
       "required": true
     },
     "DB_NAME": {
-      "description": "Database name for MongoDB (default: telegram_downloader)",
-      "value": "telegram_downloader",
+      "description": "Database name for saved settings and clone state",
+      "value": "telegram_post_vault",
       "required": false
-    },
-    "STRING": {
-      "description": "Optional session string for logged-in user sessions",
-      "value": "",
-      "required": false
-    },
-    "FORCE_SUB": {
-      "description": "Channel ID (with -100 prefix) for forced subscription",
-      "value": "0",
-      "required": false
-    },
-    "LOG_GROUP": {
-      "description": "Log channel/group ID (with -100 prefix) where the bot will send logs",
-      "value": "-1001234456",
-      "required": true
     },
     "MASTER_KEY": {
-      "description": "Master key used for session encryption",
+      "description": "Unique key for encrypting saved Telegram sessions and bot tokens",
       "value": "",
       "required": true
     },
     "IV_KEY": {
-      "description": "Initialization vector key for decryption",
+      "description": "Unique IV/key material for encrypted credentials",
       "value": "",
       "required": true
     },
-    "YT_COOKIES": {
-      "description": "Cookies for YouTube downloads (in Netscape format)",
+    "OWNER_ID": {
+      "description": "Optional numeric user IDs allowed to refresh the /start command list with /set",
       "value": "",
       "required": false
     },
-    "INSTA_COOKIES": {
-      "description": "Cookies for Instagram downloads (in Netscape format)",
-      "value": "",
-      "required": false
-    },
-    "FREEMIUM_LIMIT": {
-      "description": "Limit for freemium users (in MB or desired unit)",
+    "FORCE_SUB": {
+      "description": "Optional required channel ID; use 0 to disable",
       "value": "0",
       "required": false
     },
-    "PREMIUM_LIMIT": {
-      "description": "Limit for premium users (in MB or desired unit)",
-      "value": "500",
+    "LOG_GROUP": {
+      "description": "Optional log group for the large-file delivery path",
+      "value": "-1001234456",
       "required": false
     },
-    "ADMIN_CONTACT": {
-      "description": "type admin contact link",
-      "value": "https://t.me/tgwithrohit",
-      "required": true
-    },
-    "JOIN_LINK": {
-      "description": "type join channel link which comes on /start",
-      "value": "https://t.me/tgwithrohit",
-      "required": true
+    "STRING": {
+      "description": "Optional user session for the large-file delivery path",
+      "value": "",
+      "required": false
     }
   },
-  "buildpacks": [
-    {
-      "url": "heroku/python"
-    },
-    {
-      "url": "https://github.com/heroku/heroku-buildpack-activestorage-preview"
-    }
-  ],
+  "buildpacks": [{"url": "heroku/python"}],
   "stack": "container"
 }

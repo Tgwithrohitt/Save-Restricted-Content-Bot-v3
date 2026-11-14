@@ -1,11 +1,10 @@
-"""One opt-in live mirror per user, using their connected Pyrogram session."""
+"""One opt-in live channel clone per user, using their connected Pyrogram session."""
 import asyncio
 import logging
 from datetime import datetime
 from pyrogram import filters
 from pyrogram.handlers import MessageHandler
-from config import OWNER_ID
-from utils.func import db, get_user_data, is_premium_user
+from utils.func import db, get_user_data
 from plugins import batch
 
 logger = logging.getLogger(__name__)
@@ -19,11 +18,9 @@ lock = asyncio.Lock()
 async def start_mirror(uid, source, restoring=False):
     async with lock:
         if uid in active:
-            return False, 'A mirror is already running.'
+            return False, 'A live clone is already running.'
         if uid in stopping:
-            return False, 'Previous mirror needs a confirmed stop. Tap Stop Mirror and try again.'
-        if uid not in OWNER_ID and not await is_premium_user(uid):
-            return False, 'An active premium plan is required.'
+            return False, 'Previous live clone needs a confirmed stop. Tap Stop Clone and try again.'
         user = await get_user_data(uid) or {}
         if not user.get('session_string') or not user.get('bot_token'):
             return False, 'Connect your own account and custom bot first.'
@@ -52,10 +49,8 @@ async def start_mirror(uid, source, restoring=False):
                 if not state['active']:
                     return
                 try:
-                    # Re-check authorization and destination for each event.
-                    if uid not in OWNER_ID and not await is_premium_user(uid):
-                        await stop_mirror(uid)
-                        return
+                    # Re-check the destination for every event. A user can stop
+                    # the clone or change its route at any time from the dashboard.
                     settings = await get_user_data(uid) or {}
                     destination = settings.get('chat_id', '')
                     try:
@@ -99,9 +94,9 @@ async def start_mirror(uid, source, restoring=False):
             except Exception:
                 raise RuntimeError('Mirror start state is uncertain') from None
             if handler_attempted:
-                return False, 'Mirror start failed. Tap Stop Mirror to confirm cleanup.'
-            return False, 'Could not start mirror.'
-        return True, 'Mirror started. Only new messages received while online will be processed.'
+                return False, 'Live clone start failed. Tap Stop Clone to confirm cleanup.'
+            return False, 'Could not start live clone.'
+        return True, 'Live clone started. Only new messages received while online will be processed.'
 
 
 async def stop_mirror(uid, drain=False):
