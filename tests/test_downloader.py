@@ -40,7 +40,6 @@ class DownloaderTests(unittest.IsolatedAsyncioTestCase):
         self.addCleanup(language_patch.stop)
         menu.waiting.clear()
         menu.busy_inputs.clear()
-        menu.download_quality.clear()
         ytdl.ongoing_downloads.clear()
         ytdl.user_progress.clear()
         batch.Z.clear()
@@ -77,56 +76,25 @@ class DownloaderTests(unittest.IsolatedAsyncioTestCase):
         audio.assert_not_awaited()
         self.assertEqual(e.reply.await_count, 2)
 
-    async def test_menu_quality_selection_navigation_and_invalid(self):
-        q = callback('video')
-        with patch.object(config, 'ENABLE_EXTERNAL_DOWNLOADS', True):
-            await menu.menu_callback(None, q)
-            self.assertIn('maximum resolution', q.message.edit_text.await_args.args[0])
-            q.data = 'ui:vq:720'
-            await menu.menu_callback(None, q)
-            self.assertEqual(menu.waiting[123], 'video')
-            self.assertEqual(menu.download_quality[123], '720')
-            q.data = 'ui:home'
-            await menu.menu_callback(None, q)
-            self.assertNotIn(123, menu.download_quality)
-            self.assertNotIn(123, menu.waiting)
-            q.data = 'ui:vq:9999'
-            await menu.menu_callback(None, q)
-            self.assertNotIn(123, menu.waiting)
-
-    async def test_menu_disabled_does_not_prompt(self):
-        with patch.object(config, 'ENABLE_EXTERNAL_DOWNLOADS', False):
-            for action in ('video', 'audio', 'vq:720'):
-                q = callback(action)
+    async def test_removed_menu_downloader_callbacks_do_not_start_work(self):
+        for action in ('download', 'video', 'audio', 'vq:720'):
+            q = callback(action)
+            with patch.object(ytdl, 'process_video', new_callable=AsyncMock) as process_video, \
+                 patch.object(ytdl, 'process_audio', new_callable=AsyncMock) as process_audio:
                 await menu.menu_callback(None, q)
-                self.assertNotIn(123, menu.waiting)
-                self.assertIn('disabled', q.message.edit_text.await_args.args[0])
+            process_video.assert_not_awaited()
+            process_audio.assert_not_awaited()
+            actions = [button.callback_data for row in q.message.edit_text.await_args.kwargs['reply_markup'].inline_keyboard for button in row]
+            self.assertNotIn('ui:download', actions)
+            self.assertIn('ui:save', actions)
 
-    async def test_menu_download_reserves_before_lookup_and_passes_quality(self):
+    async def test_old_menu_download_prompt_is_discarded(self):
         menu.waiting[123] = 'video'
-        menu.download_quality[123] = '480'
-        msg = input_message('https://youtube.com/watch?v=x')
-        e = event()
-        entered, release = asyncio.Event(), asyncio.Event()
-        async def lookup(*args, **kwargs):
-            entered.set()
-            await release.wait()
-            return e
-        telethon = SimpleNamespace(get_messages=AsyncMock(side_effect=lookup))
-        with patch.object(config, 'ENABLE_EXTERNAL_DOWNLOADS', True), patch.object(shared_client, 'client', telethon), patch.object(ytdl, 'process_video', new_callable=AsyncMock) as process:
-            task = asyncio.create_task(menu.menu_input(None, msg))
-            await entered.wait()
-            self.assertIn(123, ytdl.ongoing_downloads)
-            duplicate = event()
-            with patch.object(ytdl, 'ENABLE_EXTERNAL_DOWNLOADS', True):
-                await ytdl.video_handler(duplicate)
-            self.assertIn('ongoing', duplicate.reply.await_args.args[0])
-            release.set()
-            await task
-        process.assert_awaited_once()
-        self.assertEqual(process.await_args.kwargs['quality'], '480')
-        self.assertNotIn(123, ytdl.ongoing_downloads)
-        self.assertNotIn(123, menu.download_quality)
+        msg = input_message('https://example.com/video')
+        await menu.menu_input(None, msg)
+        self.assertNotIn(123, menu.waiting)
+        self.assertIn('no longer available', msg.reply_text.await_args.args[0])
+        msg.stop_propagation.assert_called_once()
 
     async def test_legacy_reservation_released_on_error(self):
         e = event()
