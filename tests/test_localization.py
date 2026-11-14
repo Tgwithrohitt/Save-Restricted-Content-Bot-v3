@@ -32,7 +32,6 @@ class LocalizationTests(unittest.IsolatedAsyncioTestCase):
         batch.Z.clear()
         menu.waiting.clear()
         menu.busy_inputs.clear()
-        menu.download_quality.clear()
         user_steps.clear()
 
     async def test_preference_read_is_user_scoped_and_credentials_excluded(self):
@@ -53,14 +52,62 @@ class LocalizationTests(unittest.IsolatedAsyncioTestCase):
         for name in menu.PAGES:
             with self.subTest(name=name):
                 en, hi = query('home').message, query('home').message
-                await menu.render(en, name, language='en')
-                await menu.render(hi, name, language='hi')
+                with patch.object(localization.users_collection, 'find_one', new_callable=AsyncMock, return_value={}):
+                    await menu.render(en, name, language='en')
+                    await menu.render(hi, name, language='hi')
                 a = en.reply_text.await_args
                 b = hi.reply_text.await_args
                 self.assertIn('<blockquote>', b.args[0])
                 self.assertEqual([v for _, v in buttons(a.kwargs['reply_markup'])], [v for _, v in buttons(b.kwargs['reply_markup'])])
                 self.assertTrue(all(len(v.encode()) <= 64 for _, v in buttons(b.kwargs['reply_markup'])))
                 self.assertNotEqual(a.args[0], b.args[0])
+
+    async def test_home_menu_completely_omits_download_button_and_old_callback(self):
+        self.assertNotIn('download', menu.PAGES)
+        self.assertNotIn('video', menu.PROMPTS)
+        self.assertNotIn('audio', menu.PROMPTS)
+        message = query('home').message
+        await menu.render(message, 'home', language='en')
+        home_actions = [
+            callback_data
+            for _, callback_data in buttons(message.reply_text.await_args.kwargs['reply_markup'])
+        ]
+        self.assertNotIn('ui:download', home_actions)
+        self.assertIn('ui:save', home_actions)
+
+        # Existing Telegram messages may still carry buttons from the old menu.
+        with patch.object(localization, 'language_for', new_callable=AsyncMock, return_value='en'):
+            for old_action in ('download', 'video', 'audio', 'vq:720'):
+                q = query(old_action)
+                await menu.menu_callback(None, q)
+                markup = q.message.edit_text.await_args.kwargs['reply_markup']
+                self.assertNotIn('ui:download', [button.callback_data for row in markup.inline_keyboard for button in row])
+                self.assertIn('ui:save', [button.callback_data for row in markup.inline_keyboard for button in row])
+
+    async def test_setup_checklist_shows_readiness_without_rendering_credentials(self):
+        message = query('setup').message
+        stored = {'session_string': 'SECRET_SESSION_SENTINEL',
+                  'bot_token': 'SECRET_TOKEN_SENTINEL', 'chat_id': '-1001234567890'}
+        with patch.object(localization.users_collection, 'find_one', new_callable=AsyncMock, return_value=stored) as find:
+            await menu.render(message, 'setup', language='en')
+        find.assert_awaited_once_with(
+            {'user_id': 123}, {'session_string': 1, 'bot_token': 1, 'chat_id': 1, '_id': 0})
+        rendered = message.reply_text.await_args.args[0]
+        self.assertIn('Telegram account: Saved', rendered)
+        self.assertIn('Custom bot: Saved', rendered)
+        self.assertIn('Destination: Configured', rendered)
+        self.assertIn('does not confirm', rendered)
+        self.assertNotIn('SECRET_SESSION_SENTINEL', rendered)
+        self.assertNotIn('SECRET_TOKEN_SENTINEL', rendered)
+        self.assertNotIn('-1001234567890', rendered)
+
+    async def test_setup_checklist_explains_private_chat_default_in_hindi(self):
+        message = query('setup').message
+        with patch.object(localization.users_collection, 'find_one', new_callable=AsyncMock, return_value={}):
+            await menu.render(message, 'setup', language='hi')
+        rendered = message.reply_text.await_args.args[0]
+        self.assertIn('टेलीग्राम अकाउंट: सेव नहीं है', rendered)
+        self.assertIn('निजी चैट डिफ़ॉल्ट है', rendered)
 
     async def test_navigation_reads_saved_preference_for_correct_user(self):
         q = query('home', 124)

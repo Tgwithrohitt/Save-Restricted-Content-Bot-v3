@@ -25,7 +25,6 @@ logger = logging.getLogger(__name__)
 waiting = {}
 input_languages = {}  # Snapshot for the sensitive custom-bot prompt.
 busy_inputs = {}
-download_quality = {}
 # Private, one-use account deletion confirmations, scoped to the displayed message.
 delete_confirmations = {}
 DELETE_CONFIRM_SECONDS = 600
@@ -68,9 +67,13 @@ def page(title, body):
 
 PAGES = {
     'home': ('🔒 𝗦𝗔𝗩𝗘 𝗖𝗢𝗡𝗧𝗘𝗡𝗧', '👋 <b>Welcome! Choose a section below.</b>\n\n📌 <b>Use content only where you have permission.</b>', [
-        [('📥 𝗦𝗔𝗩𝗘 𝗣𝗢𝗦𝗧𝗦', 'save'), ('🎬 𝗗𝗢𝗪𝗡𝗟𝗢𝗔𝗗', 'download')],
-        [('⚙️ 𝗦𝗘𝗧𝗧𝗜𝗡𝗚𝗦', 'settings'), ('🔐 𝗔𝗖𝗖𝗢𝗨𝗡𝗧', 'account')],
+        [('🚀 𝗤𝗨𝗜𝗖𝗞 𝗦𝗘𝗧𝗨𝗣', 'setup'), ('📥 𝗦𝗔𝗩𝗘 𝗣𝗢𝗦𝗧𝗦', 'save')],
+        [('🔐 𝗔𝗖𝗖𝗢𝗨𝗡𝗧', 'account'), ('⚙️ 𝗦𝗘𝗧𝗧𝗜𝗡𝗚𝗦', 'settings')],
         [('💎 𝗣𝗥𝗘𝗠𝗜𝗨𝗠', 'premium'), ('❓ 𝗛𝗘𝗟𝗣', 'help')]], None),
+    'setup': ('🚀 𝗤𝗨𝗜𝗖𝗞 𝗦𝗘𝗧𝗨𝗣', 'Review the checklist before saving posts.', [
+        [('🔑 𝗟𝗢𝗚𝗜𝗡', 'login'), ('🤖 𝗖𝗨𝗦𝗧𝗢𝗠 𝗕𝗢𝗧', 'custombot')],
+        [('📍 𝗦𝗘𝗧 𝗗𝗘𝗦𝗧𝗜𝗡𝗔𝗧𝗜𝗢𝗡', 'destination')],
+        [('📥 𝗦𝗔𝗩𝗘 𝗣𝗢𝗦𝗧𝗦', 'save')]], 'home'),
     'save': ('📥 𝗦𝗔𝗩𝗘 𝗣𝗢𝗦𝗧𝗦', '📌 <b>Choose one post or a batch.</b>\n🔐 <b>Configure your account and custom bot first.</b>', [
         [('1️⃣ 𝗦𝗜𝗡𝗚𝗟𝗘', 'single'), ('📚 𝗕𝗔𝗧𝗖𝗛', 'batch')],
         [('🧵 𝗧𝗢𝗣𝗜𝗖 𝗕𝗔𝗧𝗖𝗛', 'topic_batch')],
@@ -79,8 +82,6 @@ PAGES = {
         [('⏸️ 𝗣𝗔𝗨𝗦𝗘', 'pause'), ('▶️ 𝗥𝗘𝗦𝗨𝗠𝗘', 'resume')],
         [('🪞 𝗟𝗜𝗩𝗘 𝗠𝗜𝗥𝗥𝗢𝗥', 'mirror'), ('⏹️ 𝗦𝗧𝗢𝗣 𝗠𝗜𝗥𝗥𝗢𝗥', 'mirror_stop')],
         [('📊 𝗠𝗜𝗥𝗥𝗢𝗥 𝗦𝗧𝗔𝗧𝗨𝗦', 'mirror_status')]], 'home'),
-    'download': ('🎬 𝗗𝗢𝗪𝗡𝗟𝗢𝗔𝗗', '🌐 <b>Choose a format and then send a supported link.</b>\n⚠️ <b>Availability depends on the source.</b>', [
-        [('🎥 𝗩𝗜𝗗𝗘𝗢', 'video'), ('🎵 𝗔𝗨𝗗𝗜𝗢', 'audio')]], 'home'),
     'account': ('🔐 𝗔𝗖𝗖𝗢𝗨𝗡𝗧', '👤 <b>Manage your Telegram session and custom bot.</b>\n⚠️ <b>Only connect an account to a bot operator you trust.</b>', [
         [('📊 𝗦𝗧𝗔𝗧𝗨𝗦', 'status'), ('🔑 𝗟𝗢𝗚𝗜𝗡', 'login')],
         [('🚪 𝗟𝗢𝗚𝗢𝗨𝗧', 'logout_confirm'), ('🤖 𝗖𝗨𝗦𝗧𝗢𝗠 𝗕𝗢𝗧', 'custombot')],
@@ -121,8 +122,6 @@ PROMPTS = {
     'owner_grant_check': ('🔎 𝗖𝗛𝗘𝗖𝗞 𝗚𝗥𝗔𝗡𝗧', 'Send the 24-character grant reference. This only checks history; it does not grant premium.'),
     'owner_broadcast': ('📢 𝗕𝗥𝗢𝗔𝗗𝗖𝗔𝗦𝗧', 'Send text to broadcast to active premium users. Please avoid sensitive information.'),
     'mirror': ('🪞 𝗟𝗜𝗩𝗘 𝗠𝗜𝗥𝗥𝗢𝗥', 'Connect your account and custom bot, then set a destination. Active premium is required except for owners. Send a source @username or numeric chat ID; source and destination must differ. Only new messages while online are processed; missed messages are not recovered.'),
-    'video': ('🎥 𝗩𝗜𝗗𝗘𝗢', 'Send a supported video link.'),
-    'audio': ('🎵 𝗔𝗨𝗗𝗜𝗢', 'Send a supported video link for audio.'),
 }
 
 
@@ -130,6 +129,31 @@ async def render(message, name, edit=False, language='en'):
     title, body, rows, back = PAGES[name]
     if language == 'hi':
         title, body = localization.HI_PAGES.get(name, (title, body))
+    if name == 'setup':
+        try:
+            from utils.func import users_collection
+            data = await users_collection.find_one(
+                {'user_id': message.chat.id},
+                {'session_string': 1, 'bot_token': 1, 'chat_id': 1, '_id': 0},
+            ) or {}
+            if language == 'hi':
+                body = (
+                    f"{'✅' if data.get('session_string') else '❌'} टेलीग्राम अकाउंट: {'सेव है' if data.get('session_string') else 'सेव नहीं है'}\n"
+                    f"{'✅' if data.get('bot_token') else '❌'} कस्टम बॉट: {'सेव है' if data.get('bot_token') else 'सेव नहीं है'}\n"
+                    f"{'✅' if data.get('chat_id') else 'ℹ️'} डेस्टिनेशन: {'सेट है' if data.get('chat_id') else 'सेट नहीं; निजी चैट डिफ़ॉल्ट है'}\n\n"
+                    'सेव होना वैधता की पुष्टि नहीं है। पहले केवल वही सामग्री सेव करें जिसकी आपको अनुमति है।'
+                )
+            else:
+                body = (
+                    f"{'✅' if data.get('session_string') else '❌'} Telegram account: {'Saved' if data.get('session_string') else 'Not saved'}\n"
+                    f"{'✅' if data.get('bot_token') else '❌'} Custom bot: {'Saved' if data.get('bot_token') else 'Not saved'}\n"
+                    f"{'✅' if data.get('chat_id') else 'ℹ️'} Destination: {'Configured' if data.get('chat_id') else 'Not set; private chat is the default'}\n\n"
+                    'Stored status does not confirm that Telegram credentials are valid. Only save content you have permission to access.'
+                )
+        except Exception:
+            logger.warning('Could not load setup checklist')
+            body = ('⚠️ सेटअप स्थिति नहीं पढ़ सके। दोबारा कोशिश करें।' if language == 'hi'
+                    else '⚠️ Could not load setup status. Try again.')
     if name == 'home' and message.chat.id in OWNER_ID:
         rows = rows + [[('👑 𝗢𝗪𝗡𝗘𝗥', 'owner')]]
     fn = message.edit_text if edit else message.reply_text
@@ -153,7 +177,6 @@ async def navigate(message, uid, name, edit):
         input_languages.pop(uid, None)
         gift_pending.pop(uid, None)
         payment_confirmations.pop(uid, None)
-        download_quality.pop(uid, None)
         flow = batch.Z.get(uid)
         if flow and flow.get('step') in ('start', 'start_single', 'count', 'validating'):
             batch.Z.pop(uid, None)
@@ -198,6 +221,9 @@ async def menu_callback(client, query):
         from plugins.payment_review import confirmations as payment_confirmations
         payment_confirmations.pop(uid, None)
     await query.answer()
+    if action in ('download', 'video', 'audio') or action.startswith('vq:'):
+        await navigate(query.message, uid, 'home', True)
+        return
     if uid in busy_inputs and action not in ('task', 'status', 'stop', 'pause', 'resume', 'history'):
         await query.message.reply_text('⏳ Your previous input is still being processed. Please wait.')
         return
@@ -228,42 +254,7 @@ async def menu_callback(client, query):
                 return
             await render(query.message, 'settings', True, language)
             await query.message.reply_text('✅ भाषा हिन्दी पर सेट है। कुछ अन्य स्क्रीन अंग्रेज़ी में रहेंगी।' if language == 'hi' else '✅ Language set to English.')
-    elif action == 'video':
-        from config import ENABLE_EXTERNAL_DOWNLOADS
-        if not ENABLE_EXTERNAL_DOWNLOADS:
-            await query.message.edit_text(page('⚠️ 𝗗𝗢𝗪𝗡𝗟𝗢𝗔𝗗', 'External downloads are disabled by the operator.'), reply_markup=markup([], 'download'), parse_mode=ParseMode.HTML)
-            return
-        rows = [[('✨ 𝗔𝗨𝗧𝗢', 'vq:auto')], [('📱 𝟯𝟲𝟬𝗽', 'vq:360'), ('📺 𝟰𝟴𝟬𝗽', 'vq:480')], [('📺 𝟳𝟮𝟬𝗽', 'vq:720'), ('🎬 𝟭𝟬𝟴𝟬𝗽', 'vq:1080')]]
-        body = 'Choose the maximum resolution. The best available MP4 at or below that limit is used; exact resolution and availability are not guaranteed.'
-        await query.message.edit_text(page('🎥 𝗩𝗜𝗗𝗘𝗢 𝗤𝗨𝗔𝗟𝗜𝗧𝗬', body), reply_markup=markup(rows, 'download'), parse_mode=ParseMode.HTML)
-    elif action.startswith('vq:'):
-        from config import ENABLE_EXTERNAL_DOWNLOADS
-        quality = action.partition(':')[2]
-        if not ENABLE_EXTERNAL_DOWNLOADS or quality not in ('auto', '360', '480', '720', '1080'):
-            await query.message.edit_text(page('⚠️ 𝗗𝗢𝗪𝗡𝗟𝗢𝗔𝗗', 'Quality is invalid or external downloads are disabled.'), reply_markup=markup([], 'download'), parse_mode=ParseMode.HTML)
-            return
-        from plugins.batch_queue import lock_for
-        async with lock_for(uid):
-            language = await localization.language_for(uid)
-            if get_user_step(uid) or uid in batch.Z or uid in waiting or uid in busy_inputs:
-                await query.message.reply_text('⚠️ Finish or cancel the current input first.')
-                return
-            download_quality[uid] = quality
-            waiting[uid] = 'video'
-            title, prompt = localization.HI_PROMPTS['video'] if language == 'hi' else PROMPTS['video']
-            label = ('ऑटो' if quality == 'auto' else f'{quality}p तक') if language == 'hi' else ('Auto' if quality == 'auto' else f'Up to {quality}p')
-            try:
-                await query.message.reply_text(page(title, html.escape(f'{label}. {prompt}')), reply_markup=markup([[('❌ 𝗖𝗔𝗡𝗖𝗘𝗟', 'cancel')]], 'download', language), parse_mode=ParseMode.HTML)
-            except Exception:
-                waiting.pop(uid, None)
-                download_quality.pop(uid, None)
-                raise
     elif action in PROMPTS:
-        if action == 'audio':
-            from config import ENABLE_EXTERNAL_DOWNLOADS
-            if not ENABLE_EXTERNAL_DOWNLOADS:
-                await query.message.edit_text(page('⚠️ 𝗗𝗢𝗪𝗡𝗟𝗢𝗔𝗗', 'External downloads are disabled by the operator.'), reply_markup=markup([], 'download'), parse_mode=ParseMode.HTML)
-                return
         # Serialize selection with cancellation, login and other prompts.
         from plugins.batch_queue import lock_for
         async with lock_for(uid):
@@ -290,7 +281,6 @@ async def menu_callback(client, query):
             input_languages.pop(uid, None)
             gift_pending.pop(uid, None)
             payment_confirmations.pop(uid, None)
-            download_quality.pop(uid, None)
             flow = batch.Z.pop(uid, None)
             if flow and flow.get('step') in ('process', 'process_single') and batch.is_user_active(uid):
                 await batch.request_batch_cancel(uid)
@@ -854,7 +844,6 @@ async def menu_callback(client, query):
                 return
             try:
                 batch.Z.pop(uid, None)
-                download_quality.pop(uid, None)
                 from plugins.batch_history import confirmations as history_confirmations
                 from plugins.settings_clear import confirmations as setting_confirmations
                 from plugins.gift import pending as gift_pending
@@ -1048,40 +1037,9 @@ async def menu_input(client, message):
             await handle_custom_bot_input(message, uid, text, input_languages.get(uid, 'en'))
             return
         elif action in ('video', 'audio'):
-            from config import ENABLE_EXTERNAL_DOWNLOADS
-            if not ENABLE_EXTERNAL_DOWNLOADS:
-                waiting.pop(uid, None)
-                download_quality.pop(uid, None)
-                await message.reply_text('⚠️ External downloads are disabled by the operator.')
-                return
-            from plugins.ytdl import valid_external_url
-            if not valid_external_url(text):
-                await message.reply_text('⚠️ Please send a valid HTTP(S) URL.')
-                return
-            from shared_client import client as telethon_client
-            from plugins.ytdl import process_audio, process_video, ongoing_downloads, user_progress, cookies_for_url
-            if uid in ongoing_downloads:
-                await message.reply_text('⚠️ A download is already running.')
-                return
-            # Reserve synchronously before any network await, including lookup.
-            ongoing_downloads[uid] = True
-            quality = download_quality.pop(uid, 'auto')
+            # Clean up prompts created by an older menu version without starting work.
             waiting.pop(uid, None)
-            if busy_inputs.get(uid) is busy_token:
-                busy_inputs.pop(uid, None)
-            try:
-                event = await telethon_client.get_messages(uid, ids=message.id)
-                if not event or event.sender_id != uid or event.chat_id != uid:
-                    await message.reply_text('⚠️ Could not verify the input message. Please try again.')
-                    return
-                cookies = cookies_for_url(text)
-                if action == 'audio':
-                    await process_audio(telethon_client, event, text, cookies)
-                else:
-                    await process_video(telethon_client, event, text, cookies, check_duration_and_size=True, quality=quality)
-            finally:
-                ongoing_downloads.pop(uid, None)
-                user_progress.pop(uid, None)
+            await message.reply_text('This menu option is no longer available. Send /start to open the current menu.')
             return
         elif action == 'mirror':
             from plugins.mirror import start_mirror
@@ -1144,7 +1102,6 @@ async def menu_input(client, message):
         logger.error('Menu input failed for action %s', action)
         waiting.pop(uid, None)
         input_languages.pop(uid, None)
-        download_quality.pop(uid, None)
         await message.reply_text(page('⚠️ 𝗘𝗥𝗥𝗢𝗥', 'Could not complete this action. Please try again.'), reply_markup=markup([], 'home'), parse_mode=ParseMode.HTML)
     finally:
         if busy_inputs.get(uid) is busy_token:
